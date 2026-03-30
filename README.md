@@ -14,7 +14,7 @@ A RESTful API for task management built with Spring Boot 3.1.5, Java 17, and Spr
 - [Running the Application](#running-the-application)
 - [API Reference](#api-reference)
 - [Data Model](#data-model)
-- [Test Suite](#test-suite)
+  - [Test Suite](#test-suite)
 - [Running the Tests](#running-the-tests)
 - [Test Coverage](#test-coverage)
 - [Configuration](#configuration)
