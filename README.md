@@ -1,8 +1,10 @@
 # Task Manager
 
 A RESTful API for task management built with Spring Boot 3.1.5, Java 17, and Spring Data JPA. The project includes a comprehensive, multi-level test suite aligned with the Testing Pyramid, developed using AI-assisted testing practices.
-![./uml/architecture.png](./uml/architecture.png)
+
 ---
+![./uml/architecture.png](./uml/architecture.png)
+
 
 ## Table of Contents
 
