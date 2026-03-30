@@ -1,0 +1,200 @@
+@startuml test_sequence_controller_slice
+title Task Manager - Controller Slice Test Interactions
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+
+skinparam participant {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+skinparam sequence {
+    ArrowColor #2E75B6
+    LifeLineBorderColor #2E75B6
+    LifeLineBackgroundColor #EBF3FB
+    GroupBackgroundColor #F5F5F5
+    GroupBorderColor #AAAAAA
+}
+
+participant "TaskControllerTest\nTaskControllerEdgeCaseTest" as test #FFFACD
+participant "MockMvc\n[Spring Web Layer]" as mvc #FFFFFF
+participant "TaskController" as ctrl #FFFFFF
+participant "TaskService\n[@MockBean]" as svc #FFE0D5
+participant "GlobalExceptionHandler" as handler #F5F5F5
+
+note over test, svc
+  @WebMvcTest(TaskController.class)
+  Only the web layer is loaded.
+  TaskService replaced by @MockBean.
+  No JPA, no datasource, no real service.
+end note
+
+== POST /api/tasks - valid request ==
+
+test -> mvc : perform(post("/api/tasks")\n  .content(validJson))
+activate mvc
+mvc -> ctrl : createTask(TaskRequest)
+activate ctrl
+ctrl -> svc : createTask(request)
+activate svc
+svc --> ctrl : TaskResponse (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 201 Created
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isCreated())\nandExpect(jsonPath("$.id", is(1)))\nandExpect(jsonPath("$.status", is("PENDING")))\nverify(taskService, times(1)).createTask(any())
+
+== POST /api/tasks - invalid title (empty) ==
+
+test -> mvc : perform(post("/api/tasks")\n  .content(jsonWithEmptyTitle))
+activate mvc
+mvc -> ctrl : Bean Validation triggered
+activate ctrl
+ctrl --> mvc : 400 Bad Request (validation failed)
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isBadRequest())\nandExpect(jsonPath("$.title", is("Title is required")))\nverify(taskService, never()).createTask(any())
+
+== POST /api/tasks - title exceeds 100 characters ==
+
+test -> mvc : perform(post("/api/tasks")\n  .content(jsonWithLongTitle))
+activate mvc
+mvc -> ctrl : Bean Validation triggered
+activate ctrl
+ctrl --> mvc : 400 Bad Request
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isBadRequest())\nverify(taskService, never()).createTask(any())
+
+== GET /api/tasks ==
+
+test -> mvc : perform(get("/api/tasks"))
+activate mvc
+mvc -> ctrl : getAllTasks()
+activate ctrl
+ctrl -> svc : getAllTasks()
+activate svc
+svc --> ctrl : [TaskResponse] (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 200 OK
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isOk())\nandExpect(jsonPath("$", hasSize(1)))\nandExpect(jsonPath("$[0].title", is("Test Task")))
+
+== GET /api/tasks/{id} - task exists ==
+
+test -> mvc : perform(get("/api/tasks/1"))
+activate mvc
+mvc -> ctrl : getTaskById(1L)
+activate ctrl
+ctrl -> svc : getTaskById(1L)
+activate svc
+svc --> ctrl : TaskResponse (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 200 OK
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isOk())\nandExpect(jsonPath("$.id", is(1)))
+
+== GET /api/tasks/{id} - task not found ==
+
+test -> mvc : perform(get("/api/tasks/99"))
+activate mvc
+mvc -> ctrl : getTaskById(99L)
+activate ctrl
+ctrl -> svc : getTaskById(99L)
+activate svc
+svc --> ctrl : throws TaskNotFoundException (stub)
+deactivate svc
+ctrl --> handler : TaskNotFoundException propagated
+activate handler
+handler --> mvc : ResponseEntity 404 Not Found
+deactivate handler
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isNotFound())\nandExpect(jsonPath("$.message", containsString("99")))
+
+== PUT /api/tasks/{id} ==
+
+test -> mvc : perform(put("/api/tasks/1")\n  .content(validJson))
+activate mvc
+mvc -> ctrl : updateTask(1L, TaskRequest)
+activate ctrl
+ctrl -> svc : updateTask(1L, request)
+activate svc
+svc --> ctrl : TaskResponse (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 200 OK
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isOk())\nverify(taskService, times(1)).updateTask(eq(1L), any())
+
+== PATCH /api/tasks/{id}/status ==
+
+test -> mvc : perform(patch("/api/tasks/1/status")\n  .param("status", "COMPLETED"))
+activate mvc
+mvc -> ctrl : updateTaskStatus(1L, COMPLETED)
+activate ctrl
+ctrl -> svc : updateTaskStatus(1L, COMPLETED)
+activate svc
+svc --> ctrl : TaskResponse (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 200 OK
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isOk())\nverify(taskService, times(1)).updateTaskStatus(eq(1L), eq(COMPLETED))
+
+== DELETE /api/tasks/{id} - success ==
+
+test -> mvc : perform(delete("/api/tasks/1"))
+activate mvc
+mvc -> ctrl : deleteTask(1L)
+activate ctrl
+ctrl -> svc : deleteTask(1L)
+activate svc
+svc --> ctrl : void (stub)
+deactivate svc
+ctrl --> mvc : ResponseEntity 204 No Content
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isNoContent())\nverify(taskService, times(1)).deleteTask(1L)
+
+== DELETE /api/tasks/{id} - task not found ==
+
+test -> mvc : perform(delete("/api/tasks/99"))
+activate mvc
+mvc -> ctrl : deleteTask(99L)
+activate ctrl
+ctrl -> svc : deleteTask(99L)
+activate svc
+svc --> ctrl : throws TaskNotFoundException (stub)
+deactivate svc
+ctrl --> handler : TaskNotFoundException propagated
+activate handler
+handler --> mvc : ResponseEntity 404 Not Found
+deactivate handler
+deactivate ctrl
+mvc --> test : MvcResult
+deactivate mvc
+test -> test : andExpect(status().isNotFound())
+
+@enduml

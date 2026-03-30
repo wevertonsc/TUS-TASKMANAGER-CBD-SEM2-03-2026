@@ -1,0 +1,177 @@
+@startuml test_sequence_service_unit
+title Task Manager - Service Unit Test Interactions
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+
+skinparam participant {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+}
+
+skinparam actor {
+    BackgroundColor #D5E8F0
+    BorderColor #1F4E79
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+skinparam sequence {
+    ArrowColor #2E75B6
+    LifeLineBorderColor #2E75B6
+    LifeLineBackgroundColor #EBF3FB
+    GroupBackgroundColor #F5F5F5
+    GroupBorderColor #AAAAAA
+}
+
+participant "TaskServiceTest\nTaskServiceEdgeCaseTest" as test #D5E8F0
+participant "TaskServiceImpl\n[@InjectMocks]" as service #FFFFFF
+participant "TaskRepository\n[@Mock]" as repo #FFFACD
+
+note over test, repo
+  @ExtendWith(MockitoExtension.class)
+  No Spring context loaded. Pure Mockito.
+  Constructor injection satisfied by @InjectMocks.
+end note
+
+== createTask - happy path ==
+
+test -> service : createTask(taskRequest)
+activate service
+service -> repo : save(task)
+activate repo
+repo --> service : savedTask (stub)
+deactivate repo
+service --> test : TaskResponse
+deactivate service
+test -> test : assertThat(response.getId()).isEqualTo(1L)\nassertThat(response.getStatus()).isEqualTo(PENDING)
+
+== createTask - null description ==
+
+test -> service : createTask(request with null description)
+activate service
+service -> repo : save(task)
+activate repo
+repo --> service : task with null description (stub)
+deactivate repo
+service --> test : TaskResponse
+deactivate service
+test -> test : assertThat(response.getDescription()).isNull()
+
+== createTask - status always PENDING ==
+
+test -> service : createTask(request)
+activate service
+service -> repo : save(task)
+activate repo
+repo --> service : task (stub)
+deactivate repo
+service --> test : TaskResponse
+deactivate service
+test -> test : assertThat(response.getStatus()).isEqualTo(PENDING)
+
+== getTaskById - task exists ==
+
+test -> service : getTaskById(1L)
+activate service
+service -> repo : findById(1L)
+activate repo
+repo --> service : Optional.of(task) (stub)
+deactivate repo
+service --> test : TaskResponse
+deactivate service
+test -> test : assertThat(response.getId()).isEqualTo(1L)
+
+== getTaskById - task not found ==
+
+test -> service : getTaskById(99L)
+activate service
+service -> repo : findById(99L)
+activate repo
+repo --> service : Optional.empty() (stub)
+deactivate repo
+service --> test : throws TaskNotFoundException
+deactivate service
+test -> test : assertThatThrownBy(...)\n  .isInstanceOf(TaskNotFoundException.class)\n  .hasMessage("Task not found with id: 99")
+
+== updateTask - happy path ==
+
+test -> service : updateTask(1L, updateRequest)
+activate service
+service -> repo : findById(1L)
+activate repo
+repo --> service : Optional.of(task) (stub)
+deactivate repo
+service -> repo : save(updatedTask)
+activate repo
+repo --> service : updatedTask with new title (stub)
+deactivate repo
+service --> test : TaskResponse
+deactivate service
+test -> test : assertThat(response.getTitle()).isEqualTo("Updated Title")
+
+== updateTask - task not found ==
+
+test -> service : updateTask(42L, request)
+activate service
+service -> repo : findById(42L)
+activate repo
+repo --> service : Optional.empty() (stub)
+deactivate repo
+service --> test : throws TaskNotFoundException
+deactivate service
+test -> test : verify(repo, never()).save(any())
+
+== updateTaskStatus - all statuses ==
+
+loop for each status in [PENDING, IN_PROGRESS, COMPLETED, CANCELLED]
+    test -> service : updateTaskStatus(1L, status)
+    activate service
+    service -> repo : findById(1L)
+    activate repo
+    repo --> service : Optional.of(task) (stub)
+    deactivate repo
+    service -> repo : save(task)
+    activate repo
+    repo --> service : task with new status (stub)
+    deactivate repo
+    service --> test : TaskResponse
+    deactivate service
+    test -> test : assertThat(response.getStatus()).isEqualTo(status)
+end
+
+== deleteTask - task exists ==
+
+test -> service : deleteTask(1L)
+activate service
+service -> repo : existsById(1L)
+activate repo
+repo --> service : true (stub)
+deactivate repo
+service -> repo : deleteById(1L)
+activate repo
+repo --> service : void
+deactivate repo
+deactivate service
+test -> test : verify(repo, times(1)).existsById(1L)\nverify(repo, times(1)).deleteById(1L)
+
+== deleteTask - task not found ==
+
+test -> service : deleteTask(99L)
+activate service
+service -> repo : existsById(99L)
+activate repo
+repo --> service : false (stub)
+deactivate repo
+service --> test : throws TaskNotFoundException
+deactivate service
+test -> test : verify(repo, never()).deleteById(anyLong())
+
+@enduml

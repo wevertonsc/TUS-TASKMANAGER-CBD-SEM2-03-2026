@@ -1,0 +1,150 @@
+@startuml test_strategy_components
+
+title Task Manager - Test Strategy and Dependency Injection Map
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+skinparam package {
+    BorderColor #2E75B6
+    FontColor #1F4E79
+    FontStyle bold
+    FontSize 13
+}
+
+skinparam component {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+    FontSize 11
+}
+
+skinparam database {
+    BackgroundColor #F0FFF0
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+    FontSize 11
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 10
+}
+
+skinparam arrow {
+    Color #2E75B6
+    FontSize 10
+}
+
+'-------------------------------------------------------------------
+' Production Application Beans
+'-------------------------------------------------------------------
+package "Production Application Beans" #EBF3FB {
+    [TaskController] as CTRL
+    [TaskServiceImpl] as SVC
+    [TaskRepository] as REPO
+    database "PostgreSQL\n(production)" as PG
+}
+
+CTRL --> SVC : constructor injection
+SVC  --> REPO : constructor injection
+REPO --> PG   : JPA / Hibernate
+
+'-------------------------------------------------------------------
+' Service Unit Tests
+'-------------------------------------------------------------------
+package "Service Unit Tests  |  @ExtendWith(MockitoExtension.class)  |  No Spring context. No HTTP. No DB." #EBF8FF {
+    [TaskServiceImpl\n@InjectMocks REAL] as SVC_U
+    [TaskRepository\n@Mock MOCK] as REPO_U
+}
+
+SVC_U ..> REPO_U : constructor injection\n(Mockito satisfies)
+
+note bottom of REPO_U
+  Mockito proxy. No SQL.
+  Fastest test execution.
+end note
+
+'-------------------------------------------------------------------
+' Controller Slice Tests
+'-------------------------------------------------------------------
+package "Controller Slice Tests  |  @WebMvcTest(TaskController.class)  |  Web layer only. No JPA. No real service." #FFF8E8 {
+    [MockMvc\nREAL] as MMVC_C
+    [TaskController\nREAL] as CTRL_C
+    [TaskService\n@MockBean MOCK] as SVC_C
+}
+
+MMVC_C --> CTRL_C : dispatches HTTP
+CTRL_C ..> SVC_C  : constructor injection\n(Spring satisfies @MockBean)
+
+note bottom of SVC_C
+  Spring replaces TaskService
+  with Mockito stub.
+  Tests HTTP contracts
+  and bean validation.
+end note
+
+'-------------------------------------------------------------------
+' Repository Slice Tests
+'-------------------------------------------------------------------
+package "Repository Slice Tests  |  @DataJpaTest  |  JPA slice only. No web. No service beans." #F0FFF0 {
+    [TestEntityManager\nREAL] as TEM_R
+    [TaskRepository\nREAL] as REPO_R
+    database "H2 in-memory\n(replaces PostgreSQL)" as H2_R
+}
+
+TEM_R --> H2_R  : fixture INSERT
+REPO_R --> H2_R : real JPA / SQL
+
+note bottom of REPO_R
+  Verifies query correctness.
+  No web or service beans.
+end note
+
+'-------------------------------------------------------------------
+' Integration Tests
+'-------------------------------------------------------------------
+package "Integration Tests  |  @SpringBootTest + @ActiveProfiles(test)  |  No mocks. Full context." #FFF0F0 {
+    [MockMvc\nREAL] as MMVC_I
+    [TaskController\nREAL] as CTRL_I
+    [TaskServiceImpl\nREAL] as SVC_I
+    [TaskRepository\nREAL] as REPO_I
+    database "H2 in-memory\n(replaces PostgreSQL)" as H2_I
+}
+
+MMVC_I --> CTRL_I
+CTRL_I --> SVC_I  : constructor injection
+SVC_I  --> REPO_I : constructor injection
+REPO_I --> H2_I   : real JPA / SQL
+
+note bottom of H2_I
+  No mocks anywhere.
+  Full Spring context.
+  Tests layer collaboration.
+end note
+
+'-------------------------------------------------------------------
+' End-to-End Tests
+'-------------------------------------------------------------------
+package "End-to-End Tests  |  @SpringBootTest + @ActiveProfiles(test)  |  No mocks. Workflow scenarios." #FFE8E8 {
+    [MockMvc\nREAL] as MMVC_E
+    [TaskController\nREAL] as CTRL_E
+    [TaskServiceImpl\nREAL] as SVC_E
+    [TaskRepository\nREAL] as REPO_E
+    database "H2 in-memory\n(replaces PostgreSQL)" as H2_E
+}
+
+MMVC_E --> CTRL_E
+CTRL_E --> SVC_E  : constructor injection
+SVC_E  --> REPO_E : constructor injection
+REPO_E --> H2_E   : real JPA / SQL
+
+note bottom of H2_E
+  No mocks anywhere.
+  Full Spring context.
+  Multi-step user workflows.
+end note
+
+@enduml

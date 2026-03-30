@@ -1,7 +1,8 @@
-package com.example.taskmanager.repository;
+package com.example.taskmanager.unit.repository;
 
 import com.example.taskmanager.model.Task;
 import com.example.taskmanager.model.TaskStatus;
+import com.example.taskmanager.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

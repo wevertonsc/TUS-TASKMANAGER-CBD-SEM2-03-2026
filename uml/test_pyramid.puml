@@ -1,0 +1,206 @@
+@startuml test_pyramid
+title Task Manager - Testing Pyramid
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+skinparam package {
+    BorderColor #2E75B6
+    FontColor #1F4E79
+    FontStyle bold
+}
+
+skinparam class {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+    ArrowColor #2E75B6
+    AttributeFontSize 11
+    StereotypeFontSize 10
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+'-------------------------------------------------------------------
+' LEVEL 5 - E2E
+'-------------------------------------------------------------------
+package "Level 5 - End-to-End / System  [4 tests]" #FFE0E0 {
+
+    class TaskEndToEndTest <<@SpringBootTest\n@AutoConfigureMockMvc\n@ActiveProfiles("test")>> {
+        .. Scenario: Full CRUD Lifecycle ..
+        + fullTaskLifecycle_CreateReadUpdateDelete_ShouldSucceed()
+        .. Scenario: Status Filter Workflow ..
+        + statusFilterWorkflow_ShouldReturnCorrectSubsets()
+        .. Scenario: Validation End-to-End ..
+        + validation_ShouldRejectInvalidRequests_EndToEnd()
+        .. Scenario: Structured Error Response ..
+        + notFound_ShouldReturnStructuredErrorResponse()
+    }
+
+    note right of TaskEndToEndTest
+      No mocks.
+      Full Spring context + H2.
+      Verifies complete workflows
+      across all application layers.
+    end note
+}
+
+'-------------------------------------------------------------------
+' LEVEL 4 - Integration
+'-------------------------------------------------------------------
+package "Level 4 - Integration  [4 tests]" #FFD5B0 {
+
+    class TaskIntegrationTest <<@SpringBootTest\n@AutoConfigureMockMvc\n@ActiveProfiles("test")>> {
+        + createAndGetTask_ShouldWorkCorrectly()
+        + updateTaskStatus_ShouldUpdateCorrectly()
+        + deleteTask_ShouldRemoveTask()
+        + getTasksByStatus_ShouldReturnFilteredResults()
+    }
+
+    note right of TaskIntegrationTest
+      No mocks.
+      Full Spring context + H2.
+      Verifies request-to-database cycle.
+    end note
+}
+
+'-------------------------------------------------------------------
+' LEVEL 3 - Controller Slice
+'-------------------------------------------------------------------
+package "Level 3 - Controller Slice  [15 tests]" #FFFACD {
+
+    class TaskControllerTest <<@WebMvcTest(TaskController.class)>> {
+        .. Setup ..
+        - mockMvc : MockMvc
+        - taskService : TaskService <<@MockBean>>
+        ..
+        + createTask_ShouldReturnCreatedTask_WhenValidRequest()
+        + createTask_ShouldReturnBadRequest_WhenInvalidTitle()
+        + getAllTasks_ShouldReturnListOfTasks()
+        + getTaskById_ShouldReturnTask_WhenExists()
+        + updateTask_ShouldReturnUpdatedTask_WhenValidRequest()
+        + updateTaskStatus_ShouldReturnUpdatedTask()
+        + getTasksByStatus_ShouldReturnFilteredTasks()
+        + deleteTask_ShouldReturnNoContent_WhenTaskExists()
+    }
+
+    class TaskControllerEdgeCaseTest <<@WebMvcTest(TaskController.class)>> {
+        .. Setup ..
+        - mockMvc : MockMvc
+        - taskService : TaskService <<@MockBean>>
+        ..
+        + getTaskById_ShouldReturn404_WhenTaskNotFound()
+        + updateTask_ShouldReturn404_WhenTaskNotFound()
+        + deleteTask_ShouldReturn404_WhenTaskNotFound()
+        + createTask_ShouldReturnBadRequest_WhenTitleIsNull()
+        + createTask_ShouldReturnBadRequest_WhenTitleExceedsMaxLength()
+        + getAllTasks_ShouldReturnEmptyArray_WhenNoTasksExist()
+        + getTasksByStatus_ShouldReturnEmptyArray_WhenNoTasksMatchStatus()
+    }
+
+    note right of TaskControllerTest
+      TaskService replaced by @MockBean.
+      Web layer only.
+      No JPA, no DB.
+    end note
+}
+
+'-------------------------------------------------------------------
+' LEVEL 2 - Repository Slice
+'-------------------------------------------------------------------
+package "Level 2 - Repository Slice  [11 tests]" #D5F0E0 {
+
+    class TaskRepositoryTest <<@DataJpaTest>> {
+        .. Setup ..
+        - taskRepository : TaskRepository
+        - entityManager : TestEntityManager
+        ..
+        + findByStatus_ShouldReturnTasksWithSpecificStatus()
+        + findByTitleContainingIgnoreCase_ShouldReturnMatchingTasks()
+        + findOverdueTasks_ShouldReturnTasksWithDueDatePassed()
+        + shouldSaveAndRetrieveTask()
+    }
+
+    class TaskRepositoryEdgeCaseTest <<@DataJpaTest>> {
+        .. Setup ..
+        - taskRepository : TaskRepository
+        - entityManager : TestEntityManager
+        ..
+        + findById_ShouldReturnEmpty_WhenTaskDoesNotExist()
+        + findByStatus_ShouldReturnEmpty_WhenNoTasksHaveThatStatus()
+        + findByTitleContainingIgnoreCase_ShouldBeCaseInsensitive()
+        + findOverdueTasks_ShouldNotReturnCompletedTasks()
+        + findOverdueTasks_ShouldReturnOnlyNonCompletedOverdueTasks()
+        + deleteTask_ShouldRemoveTaskFromDatabase()
+        + existsById_ShouldReturnFalse_WhenTaskDoesNotExist()
+        + existsById_ShouldReturnTrue_WhenTaskExists()
+    }
+
+    note right of TaskRepositoryTest
+      JPA slice only.
+      H2 replaces PostgreSQL.
+      TestEntityManager for fixtures.
+      No web, no service beans.
+    end note
+}
+
+'-------------------------------------------------------------------
+' LEVEL 1 - Service Unit
+'-------------------------------------------------------------------
+package "Level 1 - Service Unit  [17 tests]" #D5E8F0 {
+
+    class TaskServiceTest <<@ExtendWith(MockitoExtension.class)>> {
+        .. Setup ..
+        - taskRepository : TaskRepository <<@Mock>>
+        - taskService : TaskServiceImpl <<@InjectMocks>>
+        ..
+        + createTask_ShouldReturnTaskResponse_WhenTaskIsCreated()
+        + getAllTasks_ShouldReturnListOfTaskResponses()
+        + getTaskById_ShouldReturnTaskResponse_WhenTaskExists()
+        + getTaskById_ShouldThrowTaskNotFoundException_WhenTaskDoesNotExist()
+        + updateTask_ShouldReturnUpdatedTaskResponse_WhenTaskExists()
+        + updateTaskStatus_ShouldUpdateStatus_WhenTaskExists()
+        + getTasksByStatus_ShouldReturnFilteredTasks()
+        + deleteTask_ShouldDeleteTask_WhenTaskExists()
+        + deleteTask_ShouldThrowTaskNotFoundException_WhenTaskDoesNotExist()
+    }
+
+    class TaskServiceEdgeCaseTest <<@ExtendWith(MockitoExtension.class)>> {
+        .. Setup ..
+        - taskRepository : TaskRepository <<@Mock>>
+        - taskService : TaskServiceImpl <<@InjectMocks>>
+        ..
+        + createTask_ShouldSetStatusToPending_Regardless()
+        + createTask_WithNullDescription_ShouldNotFail()
+        + createTask_WithDueDate_ShouldPreserveDueDate()
+        + getAllTasks_ShouldReturnEmptyList_WhenNoTasksExist()
+        + updateTask_ShouldThrowTaskNotFoundException_WhenTaskDoesNotExist()
+        + updateTask_ShouldNotChangeStatus_WhenUpdatingFields()
+        + updateTaskStatus_ShouldThrowTaskNotFoundException_WhenTaskDoesNotExist()
+        + updateTaskStatus_ToAllValidStatuses_ShouldSucceed()
+        + getTasksByStatus_ShouldReturnEmptyList_WhenNoTasksMatchStatus()
+    }
+
+    note right of TaskServiceTest
+      Pure Mockito.
+      No Spring context loaded.
+      Constructor injection via
+      @InjectMocks.
+    end note
+}
+
+'-------------------------------------------------------------------
+' Supporting test
+'-------------------------------------------------------------------
+package "Context Smoke Test  [1 test]" #F5F5F5 {
+    class TaskmanagerApplicationTests <<@SpringBootTest\n@ActiveProfiles("test")>> {
+        + contextLoads()
+    }
+}
+
+@enduml

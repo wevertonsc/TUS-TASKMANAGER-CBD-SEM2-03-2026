@@ -1,0 +1,233 @@
+@startuml architecture
+
+title Task Manager - Application Architecture
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+skinparam package {
+    BackgroundColor #EBF3FB
+    BorderColor #2E75B6
+    FontColor #1F4E79
+    FontStyle bold
+    FontSize 13
+}
+
+skinparam class {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+    HeaderBackgroundColor #D5E8F0
+    ArrowColor #2E75B6
+    AttributeFontSize 11
+    StereotypeFontSize 10
+}
+
+skinparam interface {
+    BackgroundColor #FFFDE7
+    BorderColor #F9A825
+    FontColor #1A1A1A
+    HeaderBackgroundColor #FFF9C4
+}
+
+skinparam enum {
+    BackgroundColor #F3E5F5
+    BorderColor #7B1FA2
+    FontColor #1A1A1A
+    HeaderBackgroundColor #E1BEE7
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+skinparam arrow {
+    Color #2E75B6
+    FontSize 10
+}
+
+'-------------------------------------------------------------------
+' Web Layer
+'-------------------------------------------------------------------
+package "Web Layer" {
+
+    class TaskController {
+        - taskService : TaskService
+        --
+        + TaskController(taskService : TaskService)
+        ..
+        + createTask(request : TaskRequest) : ResponseEntity
+        + getAllTasks() : ResponseEntity
+        + getTaskById(id : Long) : ResponseEntity
+        + getTasksByStatus(status : TaskStatus) : ResponseEntity
+        + updateTask(id : Long, request : TaskRequest) : ResponseEntity
+        + updateTaskStatus(id : Long, status : TaskStatus) : ResponseEntity
+        + deleteTask(id : Long) : ResponseEntity
+    }
+
+    class GlobalExceptionHandler {
+        + handleTaskNotFound(ex : TaskNotFoundException) : ResponseEntity
+        + handleValidationExceptions(ex : MethodArgumentNotValidException) : ResponseEntity
+        + handleGenericException(ex : Exception) : ResponseEntity
+    }
+
+    class TaskRequest {
+        + title : String
+        + description : String
+        + dueDate : LocalDateTime
+        ..
+        @NotBlank, @Size(max=100) on title
+        @Size(max=500) on description
+    }
+
+    class TaskResponse {
+        + id : Long
+        + title : String
+        + description : String
+        + status : TaskStatus
+        + createdAt : LocalDateTime
+        + updatedAt : LocalDateTime
+        + dueDate : LocalDateTime
+    }
+}
+
+'-------------------------------------------------------------------
+' Service Layer
+'-------------------------------------------------------------------
+package "Service Layer" {
+
+    interface TaskService {
+        + createTask(request : TaskRequest) : TaskResponse
+        + updateTask(id : Long, request : TaskRequest) : TaskResponse
+        + updateTaskStatus(id : Long, status : TaskStatus) : TaskResponse
+        + getTaskById(id : Long) : TaskResponse
+        + getAllTasks() : List
+        + getTasksByStatus(status : TaskStatus) : List
+        + deleteTask(id : Long) : void
+    }
+
+    class TaskServiceImpl {
+        - taskRepository : TaskRepository
+        --
+        + TaskServiceImpl(taskRepository : TaskRepository)
+        ..
+        + createTask(request : TaskRequest) : TaskResponse
+        + updateTask(id : Long, request : TaskRequest) : TaskResponse
+        + updateTaskStatus(id : Long, status : TaskStatus) : TaskResponse
+        + getTaskById(id : Long) : TaskResponse
+        + getAllTasks() : List
+        + getTasksByStatus(status : TaskStatus) : List
+        + deleteTask(id : Long) : void
+        - mapToResponse(task : Task) : TaskResponse
+    }
+}
+
+'-------------------------------------------------------------------
+' Repository Layer
+'-------------------------------------------------------------------
+package "Repository Layer" {
+
+    interface TaskRepository {
+        + findByStatus(status : TaskStatus) : List
+        + findByTitleContainingIgnoreCase(title : String) : List
+        + findOverdueTasks(date : LocalDateTime) : List
+        + findByStatusAndDueDateBetween(status : TaskStatus, start : LocalDateTime, end : LocalDateTime) : List
+        ..
+        extends JpaRepository
+    }
+}
+
+'-------------------------------------------------------------------
+' Domain Model
+'-------------------------------------------------------------------
+package "Domain Model" {
+
+    class Task {
+        - id : Long
+        - title : String
+        - description : String
+        - status : TaskStatus
+        - createdAt : LocalDateTime
+        - updatedAt : LocalDateTime
+        - dueDate : LocalDateTime
+        --
+        @Entity @Table("tasks")
+    }
+
+    enum TaskStatus {
+        PENDING
+        IN_PROGRESS
+        COMPLETED
+        CANCELLED
+    }
+
+    class TaskNotFoundException {
+        + TaskNotFoundException(id : Long)
+    }
+
+    class RuntimeException
+}
+
+'-------------------------------------------------------------------
+' Infrastructure
+'-------------------------------------------------------------------
+package "Infrastructure" {
+    class PostgreSQL <<database>> {
+        production profile
+    }
+    class H2 <<database>> {
+        test profile
+    }
+}
+
+'-------------------------------------------------------------------
+' Relationships
+'-------------------------------------------------------------------
+TaskController "1" o--> "1" TaskService       : constructor injection
+TaskController ..>  TaskRequest               : receives
+TaskController ..>  TaskResponse              : returns
+GlobalExceptionHandler ..> TaskController     : advises via @RestControllerAdvice
+
+TaskServiceImpl ..|> TaskService              : implements
+TaskServiceImpl "1" o--> "1" TaskRepository  : constructor injection
+TaskServiceImpl ..> TaskNotFoundException     : throws
+TaskServiceImpl ..> Task                      : creates / maps
+TaskServiceImpl ..> TaskResponse              : produces
+
+TaskRepository ..> Task                       : manages
+Task "1" --> "1" TaskStatus                   : has status
+
+TaskNotFoundException --|> RuntimeException
+
+TaskRepository ..> PostgreSQL                 : JPA (production)
+TaskRepository ..> H2                         : JPA (test profile)
+
+note right of TaskController
+  @RestController
+  @RequestMapping("/api/tasks")
+  Constructor injection enforced
+end note
+
+note right of TaskServiceImpl
+  @Service
+  @Transactional
+  Constructor injection enforced
+end note
+
+note right of TaskRepository
+  @Repository
+  Spring Data JPA
+  Custom JPQL queries via @Query
+end note
+
+note bottom of Task
+  @Entity
+  Default status = PENDING
+  createdAt and updatedAt
+  set in no-arg constructor
+end note
+
+@enduml

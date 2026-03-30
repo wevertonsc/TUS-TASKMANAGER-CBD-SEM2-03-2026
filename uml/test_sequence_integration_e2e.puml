@@ -1,0 +1,255 @@
+@startuml test_sequence_integration_e2e
+title Task Manager - Integration and End-to-End Test Interactions
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+
+skinparam participant {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+skinparam sequence {
+    ArrowColor #2E75B6
+    LifeLineBorderColor #2E75B6
+    LifeLineBackgroundColor #EBF3FB
+    GroupBackgroundColor #F5F5F5
+    GroupBorderColor #AAAAAA
+}
+
+participant "TaskIntegrationTest\nTaskEndToEndTest" as test #FFE0E0
+participant "MockMvc" as mvc #FFFFFF
+participant "TaskController" as ctrl #FFFFFF
+participant "TaskServiceImpl" as svc #FFFFFF
+participant "TaskRepository" as repo #FFFFFF
+database "H2 in-memory" as h2 #D5F0E0
+
+note over test, h2
+  @SpringBootTest + @AutoConfigureMockMvc + @ActiveProfiles("test")
+  Full Spring application context loaded. No mocks anywhere.
+  H2 replaces PostgreSQL. All beans wired by the real IoC container.
+  taskRepository.deleteAll() called in @BeforeEach.
+end note
+
+== Integration: createAndGetTask_ShouldWorkCorrectly ==
+
+test -> mvc : POST /api/tasks\n{title, description, dueDate}
+activate mvc
+mvc -> ctrl : createTask(request)
+activate ctrl
+ctrl -> svc : createTask(request)
+activate svc
+svc -> repo : save(task)
+activate repo
+repo -> h2 : INSERT INTO tasks
+h2 --> repo : task with id=1
+deactivate repo
+svc --> ctrl : TaskResponse
+deactivate svc
+ctrl --> mvc : 201 Created
+deactivate ctrl
+mvc --> test : response body
+deactivate mvc
+test -> test : andExpect(status().isCreated())\nandExpect(jsonPath("$.title", is("Integration Test Task")))
+
+test -> mvc : GET /api/tasks/{id}
+activate mvc
+mvc -> ctrl : getTaskById(1L)
+activate ctrl
+ctrl -> svc : getTaskById(1L)
+activate svc
+svc -> repo : findById(1L)
+activate repo
+repo -> h2 : SELECT * WHERE id=1
+h2 --> repo : task
+deactivate repo
+svc --> ctrl : TaskResponse
+deactivate svc
+ctrl --> mvc : 200 OK
+deactivate ctrl
+mvc --> test : response body
+deactivate mvc
+test -> test : andExpect(status().isOk())\nandExpect(jsonPath("$.id", is(1)))
+
+test -> mvc : GET /api/tasks
+activate mvc
+mvc -> ctrl : getAllTasks()
+activate ctrl
+ctrl -> svc : getAllTasks()
+activate svc
+svc -> repo : findAll()
+activate repo
+repo -> h2 : SELECT * FROM tasks
+h2 --> repo : [task]
+deactivate repo
+svc --> ctrl : [TaskResponse]
+deactivate svc
+ctrl --> mvc : 200 OK
+deactivate ctrl
+mvc --> test : response body
+deactivate mvc
+test -> test : andExpect(jsonPath("$", hasSize(1)))
+
+== Integration: updateTaskStatus_ShouldUpdateCorrectly ==
+
+test -> repo : save(task with PENDING)
+activate repo
+repo -> h2 : INSERT
+h2 --> repo : saved
+deactivate repo
+
+test -> mvc : PATCH /api/tasks/{id}/status?status=IN_PROGRESS
+activate mvc
+mvc -> ctrl : updateTaskStatus(id, IN_PROGRESS)
+activate ctrl
+ctrl -> svc : updateTaskStatus(id, IN_PROGRESS)
+activate svc
+svc -> repo : findById(id)
+activate repo
+repo -> h2 : SELECT
+h2 --> repo : task
+deactivate repo
+svc -> repo : save(task with IN_PROGRESS)
+activate repo
+repo -> h2 : UPDATE tasks SET status='IN_PROGRESS'
+h2 --> repo : updated
+deactivate repo
+svc --> ctrl : TaskResponse
+deactivate svc
+ctrl --> mvc : 200 OK
+deactivate ctrl
+mvc --> test : response body
+deactivate mvc
+test -> test : andExpect(jsonPath("$.status", is("IN_PROGRESS")))
+
+== Integration: deleteTask_ShouldRemoveTask ==
+
+test -> repo : save(task)
+activate repo
+repo -> h2 : INSERT
+h2 --> repo : saved
+deactivate repo
+
+test -> mvc : DELETE /api/tasks/{id}
+activate mvc
+mvc -> ctrl : deleteTask(id)
+activate ctrl
+ctrl -> svc : deleteTask(id)
+activate svc
+svc -> repo : existsById(id)
+activate repo
+repo -> h2 : SELECT COUNT
+h2 --> repo : 1
+deactivate repo
+svc -> repo : deleteById(id)
+activate repo
+repo -> h2 : DELETE WHERE id=?
+h2 --> repo : ok
+deactivate repo
+svc --> ctrl : void
+deactivate svc
+ctrl --> mvc : 204 No Content
+deactivate ctrl
+mvc --> test : no body
+deactivate mvc
+test -> test : andExpect(status().isNoContent())
+
+test -> mvc : GET /api/tasks/{id}
+activate mvc
+mvc -> ctrl : getTaskById(id)
+activate ctrl
+ctrl -> svc : getTaskById(id)
+activate svc
+svc -> repo : findById(id)
+activate repo
+repo -> h2 : SELECT WHERE id=?
+h2 --> repo : empty
+deactivate repo
+svc --> ctrl : throws TaskNotFoundException
+deactivate svc
+ctrl --> mvc : 404 Not Found
+deactivate ctrl
+mvc --> test : error body
+deactivate mvc
+test -> test : andExpect(status().isNotFound())
+
+== E2E: fullTaskLifecycle_CreateReadUpdateDelete_ShouldSucceed ==
+
+test -> mvc : POST /api/tasks
+activate mvc
+mvc --> test : 201 + taskId
+deactivate mvc
+
+test -> mvc : GET /api/tasks/{taskId}
+activate mvc
+mvc --> test : 200 + task body
+deactivate mvc
+
+test -> mvc : PUT /api/tasks/{taskId}\n{title: "Updated E2E Task"}
+activate mvc
+mvc --> test : 200 + updated body
+deactivate mvc
+test -> test : andExpect(jsonPath("$.title", is("Updated E2E Task")))
+
+test -> mvc : PATCH /api/tasks/{taskId}/status?status=COMPLETED
+activate mvc
+mvc --> test : 200 + COMPLETED status
+deactivate mvc
+test -> test : andExpect(jsonPath("$.status", is("COMPLETED")))
+
+test -> mvc : DELETE /api/tasks/{taskId}
+activate mvc
+mvc --> test : 204 No Content
+deactivate mvc
+
+test -> mvc : GET /api/tasks/{taskId}
+activate mvc
+mvc --> test : 404 Not Found
+deactivate mvc
+test -> test : andExpect(status().isNotFound())
+
+== E2E: notFound_ShouldReturnStructuredErrorResponse ==
+
+test -> mvc : GET /api/tasks/999
+activate mvc
+mvc -> ctrl : getTaskById(999L)
+activate ctrl
+ctrl -> svc : getTaskById(999L)
+activate svc
+svc -> repo : findById(999L)
+activate repo
+repo -> h2 : SELECT WHERE id=999
+h2 --> repo : empty
+deactivate repo
+svc --> ctrl : throws TaskNotFoundException
+deactivate svc
+ctrl --> mvc : 404 Not Found\n{status:404, message:"Task not found with id: 999", timestamp}
+deactivate ctrl
+mvc --> test : error response body
+deactivate mvc
+test -> test : andExpect(jsonPath("$.status", is(404)))\nandExpect(jsonPath("$.message", containsString("999")))\nandExpect(jsonPath("$.timestamp").exists())
+
+== E2E: validation_ShouldRejectInvalidRequests_EndToEnd ==
+
+test -> mvc : POST /api/tasks\n{} (missing title)
+activate mvc
+mvc --> test : 400 Bad Request\n{title: "Title is required"}
+deactivate mvc
+test -> test : andExpect(jsonPath("$.title").exists())
+
+test -> mvc : GET /api/tasks
+activate mvc
+mvc --> test : 200 []\n(empty - nothing persisted)
+deactivate mvc
+test -> test : andExpect(jsonPath("$", hasSize(0)))
+
+@enduml

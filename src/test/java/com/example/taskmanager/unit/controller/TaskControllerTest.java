@@ -1,5 +1,6 @@
-package com.example.taskmanager.controller;
+package com.example.taskmanager.unit.controller;
 
+import com.example.taskmanager.controller.TaskController;
 import com.example.taskmanager.dto.TaskRequest;
 import com.example.taskmanager.dto.TaskResponse;
 import com.example.taskmanager.model.TaskStatus;
@@ -67,7 +68,7 @@ class TaskControllerTest {
         
         verify(taskService, times(1)).createTask(any(TaskRequest.class));
     }
-    
+
     @Test
     void createTask_ShouldReturnBadRequest_WhenInvalidTitle() throws Exception {
         taskRequest.setTitle("");
@@ -76,11 +77,11 @@ class TaskControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(taskRequest)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.title", is("Title is required")));
+                .andExpect(jsonPath("$.title", is("Title must be between 1 and 100 characters")));
         
         verify(taskService, never()).createTask(any(TaskRequest.class));
     }
-    
+
     @Test
     void getAllTasks_ShouldReturnListOfTasks() throws Exception {
         List<TaskResponse> tasks = Arrays.asList(taskResponse);

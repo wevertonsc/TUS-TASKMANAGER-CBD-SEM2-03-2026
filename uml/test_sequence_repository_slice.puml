@@ -1,0 +1,193 @@
+@startuml test_sequence_repository_slice
+title Task Manager - Repository Slice Test Interactions
+
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+
+skinparam participant {
+    BackgroundColor #FFFFFF
+    BorderColor #2E75B6
+    FontColor #1A1A1A
+}
+
+skinparam note {
+    BackgroundColor #FFF9C4
+    BorderColor #F9A825
+    FontSize 11
+}
+
+skinparam sequence {
+    ArrowColor #2E75B6
+    LifeLineBorderColor #2E75B6
+    LifeLineBackgroundColor #EBF3FB
+    GroupBackgroundColor #F5F5F5
+    GroupBorderColor #AAAAAA
+}
+
+participant "TaskRepositoryTest\nTaskRepositoryEdgeCaseTest" as test #D5F0E0
+participant "TestEntityManager" as em #FFFACD
+participant "TaskRepository\n[real bean]" as repo #FFFFFF
+database "H2 in-memory\n[JPA slice]" as h2 #D5F0E0
+
+note over test, h2
+  @DataJpaTest
+  JPA slice only. No web layer, no service beans.
+  H2 replaces PostgreSQL automatically.
+  TestEntityManager used for fixture setup
+  to avoid coupling to the repository under test.
+end note
+
+== setUp (BeforeEach) ==
+
+test -> em : persist(task1 - PENDING)
+activate em
+em -> h2 : INSERT
+h2 --> em : ok
+deactivate em
+
+test -> em : persist(task2 - COMPLETED)
+activate em
+em -> h2 : INSERT
+h2 --> em : ok
+deactivate em
+
+test -> em : flush()
+activate em
+em -> h2 : FLUSH
+h2 --> em : ok
+deactivate em
+
+== findByStatus - matching status ==
+
+test -> repo : findByStatus(PENDING)
+activate repo
+repo -> h2 : SELECT * FROM tasks WHERE status = 'PENDING'
+h2 --> repo : [task1]
+repo --> test : List<Task> size=1
+deactivate repo
+test -> test : assertThat(result).hasSize(1)\nassertThat(result.get(0).getTitle())\n  .isEqualTo("Repository Test 1")
+
+== findByStatus - no matching tasks ==
+
+test -> repo : findByStatus(COMPLETED) when only PENDING tasks exist
+activate repo
+repo -> h2 : SELECT * FROM tasks WHERE status = 'COMPLETED'
+h2 --> repo : []
+repo --> test : empty List
+deactivate repo
+test -> test : assertThat(result).isEmpty()
+
+== findByTitleContainingIgnoreCase - case insensitive ==
+
+loop keyword in ["SPRING", "spring", "Spring"]
+    test -> repo : findByTitleContainingIgnoreCase(keyword)
+    activate repo
+    repo -> h2 : SELECT * FROM tasks\nWHERE LOWER(title) LIKE LOWER('%keyword%')
+    h2 --> repo : [matchingTask]
+    repo --> test : List<Task> size=1
+    deactivate repo
+    test -> test : assertThat(result).hasSize(1)
+end
+
+== findOverdueTasks - returns only non-completed overdue ==
+
+test -> em : persist(overduePendingTask - dueDate=yesterday)
+activate em
+em -> h2 : INSERT
+deactivate em
+
+test -> em : persist(futurePendingTask - dueDate=+5 days)
+activate em
+em -> h2 : INSERT
+deactivate em
+
+test -> em : flush()
+activate em
+em -> h2 : FLUSH
+deactivate em
+
+test -> repo : findOverdueTasks(LocalDateTime.now())
+activate repo
+repo -> h2 : SELECT t FROM Task t\nWHERE t.dueDate < :date\nAND t.status != 'COMPLETED'
+h2 --> repo : [overduePendingTask]
+repo --> test : List<Task> size=1
+deactivate repo
+test -> test : assertThat(result).hasSize(1)\nassertThat(result.get(0).getTitle())\n  .isEqualTo("Overdue Pending")
+
+== findOverdueTasks - completed tasks excluded ==
+
+test -> em : persist(completedOverdueTask - COMPLETED, dueDate=2 days ago)
+activate em
+em -> h2 : INSERT
+deactivate em
+
+test -> em : flush()
+activate em
+em -> h2 : FLUSH
+deactivate em
+
+test -> repo : findOverdueTasks(LocalDateTime.now())
+activate repo
+repo -> h2 : SELECT ... WHERE status != 'COMPLETED'
+h2 --> repo : []
+repo --> test : empty List
+deactivate repo
+test -> test : assertThat(result).isEmpty()
+
+== save and retrieve ==
+
+test -> repo : save(newTask)
+activate repo
+repo -> h2 : INSERT INTO tasks
+h2 --> repo : newTask with generated id
+repo --> test : Task with id != null
+deactivate repo
+
+test -> repo : findById(savedId)
+activate repo
+repo -> h2 : SELECT * FROM tasks WHERE id = ?
+h2 --> repo : task
+repo --> test : Optional.of(task)
+deactivate repo
+test -> test : assertThat(found).isNotNull()\nassertThat(found.getTitle()).isEqualTo("New Task")
+
+== existsById - task exists ==
+
+test -> repo : existsById(task.getId())
+activate repo
+repo -> h2 : SELECT COUNT(*) WHERE id = ?
+h2 --> repo : 1
+repo --> test : true
+deactivate repo
+test -> test : assertThat(result).isTrue()
+
+== existsById - task does not exist ==
+
+test -> repo : existsById(999L)
+activate repo
+repo -> h2 : SELECT COUNT(*) WHERE id = 999
+h2 --> repo : 0
+repo --> test : false
+deactivate repo
+test -> test : assertThat(result).isFalse()
+
+== deleteById ==
+
+test -> repo : deleteById(task.getId())
+activate repo
+repo -> h2 : DELETE FROM tasks WHERE id = ?
+h2 --> repo : ok
+repo --> test : void
+deactivate repo
+
+test -> repo : findById(deletedId)
+activate repo
+repo -> h2 : SELECT * FROM tasks WHERE id = ?
+h2 --> repo : empty
+repo --> test : Optional.empty()
+deactivate repo
+test -> test : assertThat(result).isEmpty()
+
+@enduml
